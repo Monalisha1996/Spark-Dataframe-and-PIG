@@ -1,13 +1,8 @@
 POC:
-Use unstructured data to find best website for each category using review:
 
-1.First upload the data from local to server using WINSCP.
-2.Load the data into hadoop.
-3.use that hadoop partition data and load into dataframe.
-4.Use PIG to filter out the required columns needed.
-5.Load that filtered columns into hadoop partition.
-6.Load that partition into HIve table.
-7.Load it into MYSQL using sqoop.
+Loading data files from hdfs partition into hive table.
+Data files: u.data and u.item
+Hive table: pig_output
 
 USING PYSPARK DATAFRAME:
 from pyspark import SparkContext
@@ -36,7 +31,7 @@ final_data = rating_for_movies.orderBy('AVG',ascending=False)
 
 final_data.where(final_data['avg(RATING)'] == 5).show()
 f2 = final_data.withColumnRenamed('avg(RATING)','AVG')
-f2.write.mode("overwrite").saveAsTable("training_mona.test_table2")
+f2.write.mode("overwrite").saveAsTable("example.pig_output") // loading into hive table
 
 USING PIG:
 
@@ -51,7 +46,7 @@ movies_group = GROUP data by movieid1;
 movies_average =  foreach movies_group generate group AS movieid1,AVG(data.rating) AS rating_new;
 movie_joined = join movie_names by movieid,movies_average by movieid1;
 sorted = order movie_joined by movies_average::rating_new DESC;
-STORE sorted INTO '/tmp/monalisha/poc/output_pig';
+STORE sorted INTO '/tmp/monalisha/poc/output_pig'; //output is stored in hdfs partition
 
 HIVE:
 
