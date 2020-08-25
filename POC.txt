@@ -1,0 +1,64 @@
+POC:
+Use unstructured data to find best website for each category using review:
+
+1.First upload the data from local to server using WINSCP.
+2.Load the data into hadoop.
+3.use that hadoop partition data and load into dataframe.
+4.Use PIG to filter out the required columns needed.
+5.Load that filtered columns into hadoop partition.
+6.Load that partition into HIve table.
+7.Load it into MYSQL using sqoop.
+
+USING PYSPARK DATAFRAME:
+from pyspark import SparkContext
+from pyspark.sql import SparkSession
+from pyspark.sql import SQLContext
+from pyspark.sql.types import *
+
+sc = SparkSession.builder.appName("Moviex_mona").getOrCreate()
+movies = sc.read.option('delimiter',',').format('csv').load('hdfs:////tmp/monalisha/poc/u.item')
+ratings = sc.read.option('delimiter','\t').format('csv').load('hdfs:////tmp/monalisha/poc/u.data')
+
+movies_df = movies.withColumnRenamed("_c0","ID").withColumnRenamed("_c1","MOVIE_NAME").select("ID","MOVIE_NAME")
+
+df1 = movies_df.withColumn("ID",movies_df["ID"].cast(IntegerType()))
+ratings_df = ratings.withColumnRenamed("_c1","ID").withColumnRenamed("_c2","RATING").select("ID","RATING")
+
+df2 = ratings_df.withColumn("ID",ratings_df["ID"].cast(IntegerType()))\
+        .withColumn("RATING",ratings_df["RATING"].cast(IntegerType()))
+
+avg_rating = df2.groupby("ID").avg("RATING")
+#this is the rating avg for each ID
+
+rating_for_movies = df1.join(avg_rating, df1.ID == avg_rating.ID,how='left')
+
+final_data = rating_for_movies.orderBy('AVG',ascending=False)
+
+final_data.where(final_data['avg(RATING)'] == 5).show()
+f2 = final_data.withColumnRenamed('avg(RATING)','AVG')
+f2.write.mode("overwrite").saveAsTable("training_mona.test_table2")
+
+USING PIG:
+
+movie_names = LOAD '/tmp/monalisha/poc/u.item' using PigStorage('|')
+as (movieid:int, movietitle:chararray);
+
+movie_ratings = LOAD '/tmp/monalisha/poc/u.data' using PigStorage('\t')
+AS (userid:int , movieid1:int , rating:int , timestamp:DateTime);
+
+data = foreach movie_ratings generate $1,$2;
+movies_group = GROUP data by movieid1;
+movies_average =  foreach movies_group generate group AS movieid1,AVG(data.rating) AS rating_new;
+movie_joined = join movie_names by movieid,movies_average by movieid1;
+sorted = order movie_joined by movies_average::rating_new DESC;
+STORE sorted INTO '/tmp/monalisha/poc/output_pig';
+
+HIVE:
+
+create table pig_output (movieid int,moviename varchar(50),rating_id int,rating decimal(10,2))
+row format delimited
+fields terminated by '\t'
+Stored as textfile;
+
+load data inpath '/tmp/monalisha/poc/output_pig/part-v006-o000-r-00000' into table pig_output;
+
